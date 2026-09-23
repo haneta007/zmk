@@ -36,6 +36,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/physical_layouts.h>
 
 static int start_scanning(void);
+static void retry_scan_work_handler(struct k_work *work) { (void)start_scanning(); }
+K_WORK_DELAYABLE_DEFINE(retry_scan_work, retry_scan_work_handler);
 
 #define POSITION_STATE_DATA_LEN 16
 
@@ -940,8 +942,9 @@ static int start_scanning(void) {
     if (external_scan_stop) {
         int err = external_scan_stop();
         if (err < 0) {
-            LOG_ERR("Secondary scanner did not yield (%d)", err);
-            return err;
+            LOG_WRN("Secondary scanner did not yield (%d); retrying split scan", err);
+            k_work_reschedule(&retry_scan_work, K_MSEC(100));
+            return 0;
         }
     }
 
@@ -951,6 +954,7 @@ static int start_scanning(void) {
     if (err < 0) {
         is_scanning = false;
         LOG_ERR("Scanning failed to start (err %d)", err);
+        k_work_reschedule(&retry_scan_work, K_MSEC(250));
         return err;
     }
 

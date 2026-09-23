@@ -153,7 +153,8 @@ bool zmk_split_ble_peripherals_ready(void) {
     }
     for (int i = 0; i < ZMK_SPLIT_BLE_PERIPHERAL_COUNT; i++) {
         if (peripherals[i].state != PERIPHERAL_SLOT_STATE_CONNECTED ||
-            !peripherals[i].subscribe_params.value_handle || !peripherals[i].run_behavior_handle) {
+            !peripherals[i].subscribe_params.value_handle || !peripherals[i].run_behavior_handle ||
+            !peripherals[i].selected_physical_layout_handle) {
             return false;
         }
     }

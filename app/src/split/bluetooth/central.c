@@ -24,6 +24,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/behavior.h>
 #include <zmk/sensors.h>
 #include <zmk/split/transport/central.h>
+#include <zmk/split/bluetooth/central_scan.h>
 #include <zmk/split/bluetooth/uuid.h>
 #include <zmk/split/bluetooth/service.h>
 #include <zmk/event_manager.h>
@@ -135,6 +136,29 @@ static bool is_enabled;
 static struct peripheral_slot peripherals[ZMK_SPLIT_BLE_PERIPHERAL_COUNT];
 
 static bool is_scanning = false;
+static bool settings_loaded = false;
+static int (*external_scan_stop)(void);
+
+int zmk_split_ble_register_external_scan_stop(int (*stop)(void)) {
+    if (!stop || (external_scan_stop && external_scan_stop != stop)) {
+        return -EINVAL;
+    }
+    external_scan_stop = stop;
+    return 0;
+}
+
+bool zmk_split_ble_peripherals_ready(void) {
+    if (!is_enabled || !settings_loaded) {
+        return false;
+    }
+    for (int i = 0; i < ZMK_SPLIT_BLE_PERIPHERAL_COUNT; i++) {
+        if (peripherals[i].state != PERIPHERAL_SLOT_STATE_CONNECTED ||
+            !peripherals[i].subscribe_params.value_handle || !peripherals[i].run_behavior_handle) {
+            return false;
+        }
+    }
+    return true;
+}
 
 static const struct bt_uuid_128 split_service_uuid = BT_UUID_INIT_128(ZMK_SPLIT_BT_SERVICE_UUID);
 
@@ -167,6 +191,10 @@ struct peripheral_slot *peripheral_slot_for_conn(struct bt_conn *conn) {
     }
 
     return &peripherals[idx];
+}
+
+bool zmk_split_ble_is_peripheral_connection(struct bt_conn *conn) {
+    return peripheral_slot_for_conn(conn) != NULL;
 }
 
 int release_peripheral_slot(int index) {
@@ -907,10 +935,20 @@ static int start_scanning(void) {
         return 0;
     }
 
+    // The split transport owns reconnection. Revoke any secondary client's scan first.
+    if (external_scan_stop) {
+        int err = external_scan_stop();
+        if (err < 0) {
+            LOG_ERR("Secondary scanner did not yield (%d)", err);
+            return err;
+        }
+    }
+
     // Start scanning otherwise.
     is_scanning = true;
     int err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, split_central_device_found);
     if (err < 0) {
+        is_scanning = false;
         LOG_ERR("Scanning failed to start (err %d)", err);
         return err;
     }
@@ -920,6 +958,9 @@ static int start_scanning(void) {
 }
 
 static void split_central_connected(struct bt_conn *conn, uint8_t conn_err) {
+    if (!peripheral_slot_for_conn(conn)) {
+        return;
+    }
     char addr[BT_ADDR_LE_STR_LEN];
     struct bt_conn_info info;
 
@@ -949,6 +990,9 @@ static void split_central_connected(struct bt_conn *conn, uint8_t conn_err) {
 }
 
 static void split_central_disconnected(struct bt_conn *conn, uint8_t reason) {
+    if (!peripheral_slot_for_conn(conn)) {
+        return;
+    }
     char addr[BT_ADDR_LE_STR_LEN];
     int err;
 
@@ -1126,8 +1170,6 @@ static int split_bt_invoke_behavior_payload(struct central_cmd_wrapper payload_w
 };
 
 static int finish_init();
-
-static bool settings_loaded = false;
 
 #if IS_ENABLED(CONFIG_SETTINGS)
 

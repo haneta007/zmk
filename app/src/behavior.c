@@ -131,7 +131,7 @@ static int validate_hid_usage(uint16_t usage_page, uint16_t usage_id) {
     switch (usage_page) {
     case HID_USAGE_KEY:
         if (usage_id == 0 ||
-            (usage_id > ZMK_HID_KEYBOARD_NKRO_MAX_USAGE &&
+            (usage_id > ZMK_HID_KEYBOARD_MAX_USAGE &&
              usage_id < HID_USAGE_KEY_KEYBOARD_LEFTCONTROL) ||
             usage_id > HID_USAGE_KEY_KEYBOARD_RIGHT_GUI) {
             return -EINVAL;
@@ -344,7 +344,7 @@ static int behavior_handle_set(const char *name, size_t len, settings_read_cb re
 }
 
 static int behavior_handle_commit(void) {
-    STRUCT_SECTION_FOREACH(zmk_behavior_local_id_map, item) {
+    STRUCT_SECTION_FOREACH(zmk_behavior_ref, item) {
         if (item->local_id != 0) {
             continue;
         }

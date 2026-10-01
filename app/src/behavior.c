@@ -344,7 +344,7 @@ static int behavior_handle_set(const char *name, size_t len, settings_read_cb re
 }
 
 static int behavior_handle_commit(void) {
-    STRUCT_SECTION_FOREACH(zmk_behavior_ref, item) {
+    STRUCT_SECTION_FOREACH(zmk_behavior_local_id_map, item) {
         if (item->local_id != 0) {
             continue;
         }
